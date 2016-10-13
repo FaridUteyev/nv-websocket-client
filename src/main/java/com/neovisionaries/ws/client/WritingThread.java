@@ -29,7 +29,6 @@ class WritingThread extends Thread
     private static final int SHOULD_STOP     = 1;
     private static final int SHOULD_CONTINUE = 2;
     private static final int SHOULD_FLUSH    = 3;
-    private static final int FLUSH_THRESHOLD = 1000;
     private final WebSocket mWebSocket;
     private final LinkedList<WebSocketFrame> mFrames;
     private final PerMessageCompressionExtension mPMCE;
@@ -335,9 +334,6 @@ class WritingThread extends Thread
 
     private void sendFrames(boolean last) throws WebSocketException
     {
-        // The timestamp at which the last flush was executed.
-        long lastFlushAt = System.currentTimeMillis();
-
         while (true)
         {
             WebSocketFrame frame;
@@ -362,28 +358,11 @@ class WritingThread extends Thread
             sendFrame(frame);
 
             // If the frame is PING or PONG.
-            if (frame.isPingFrame() || frame.isPongFrame())
+            if (frame.isPingFrame() || frame.isPongFrame() || isFlushNeeded(last))
             {
                 // Deliver the frame to the server immediately.
                 doFlush();
-                lastFlushAt = System.currentTimeMillis();
-                continue;
             }
-
-            // If flush is not needed.
-            if (isFlushNeeded(last) == false)
-            {
-                // Try to consume the next frame without flush.
-                continue;
-            }
-
-            // Flush if long time has passed since the last flush.
-            lastFlushAt = flushIfLongInterval(lastFlushAt);
-        }
-
-        if (isFlushNeeded(last))
-        {
-            doFlush();
         }
     }
 
@@ -391,28 +370,6 @@ class WritingThread extends Thread
     private boolean isFlushNeeded(boolean last)
     {
         return (last || mWebSocket.isAutoFlush() || mFlushNeeded || mCloseFrame != null);
-    }
-
-
-    private long flushIfLongInterval(long lastFlushAt) throws WebSocketException
-    {
-        // The current timestamp.
-        long current = System.currentTimeMillis();
-
-        // If sending frames has taken too much time since the last flush.
-        if (FLUSH_THRESHOLD < (current - lastFlushAt))
-        {
-            // Flush without waiting for remaining frames to be processed.
-            doFlush();
-
-            // Update the timestamp at which the last flush was executed.
-            return current;
-        }
-        else
-        {
-            // Flush is not needed now.
-            return lastFlushAt;
-        }
     }
 
 
